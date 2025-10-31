@@ -32,6 +32,7 @@
 #include "ns3/lte-pdcp-sap.h"
 #include "ns3/lte-pdcp-tag.h"
 #include "ns3/simulator.h"
+#include "ns3/boolean.h"
 
 namespace ns3
 {
@@ -79,7 +80,8 @@ McEnbPdcp::McEnbPdcp()
       m_txSequenceNumber(0),
       m_rxSequenceNumber(0),
       m_useMmWaveConnection(false),
-      m_lastHandoverTime(0.0)
+      m_lastHandoverTime(0.0),
+      m_enableS1uOptimization(true)
 {
     NS_LOG_FUNCTION(this);
     m_pdcpSapProvider = new LtePdcpSpecificLtePdcpSapProvider<McEnbPdcp>(this);
@@ -97,6 +99,11 @@ McEnbPdcp::GetTypeId(void)
 {
     static TypeId tid = TypeId("ns3::McEnbPdcp")
                             .SetParent<Object>()
+                            .AddAttribute("EnableS1uOptimization",
+                                          "Enable S1-U path optimization after handover",
+                                          BooleanValue(true),
+                                          MakeBooleanAccessor(&McEnbPdcp::m_enableS1uOptimization),
+                                          MakeBooleanChecker())
                             .AddTraceSource("TxPDU",
                                             "PDU transmission notified to the RLC.",
                                             MakeTraceSourceAccessor(&McEnbPdcp::m_txPdu),
@@ -199,6 +206,10 @@ McEnbPdcp::SetStatus(Status s)
 void
 McEnbPdcp::SetUeDataParams(EpcX2Sap::UeDataParams params)
 {
+    std::cout << "[S1-U-UPDATE] " << Simulator::Now().GetSeconds()
+              << "s: SetUeDataParams called - targetCellId changing from "
+              << m_ueDataParams.targetCellId << " to " << params.targetCellId
+              << " (RNTI=" << m_rnti << ", LCID=" << (int)m_lcid << ")" << std::endl;
     m_ueDataParams = params;
 }
 
@@ -208,6 +219,21 @@ void
 McEnbPdcp::DoTransmitPdcpSdu(Ptr<Packet> p)
 {
     NS_LOG_FUNCTION(this << m_rnti << (uint32_t)m_lcid << p->GetSize());
+    
+    // Debug: Log every packet transmission after initial setup
+    static bool loggingEnabled = false;
+    if (Simulator::Now().GetSeconds() > 1.0) {
+        loggingEnabled = true;
+    }
+    
+    if (loggingEnabled && Simulator::Now().GetSeconds() > 10.5 && Simulator::Now().GetSeconds() < 11.0) {
+        std::cout << "[S1-U-TX] " << Simulator::Now().GetSeconds()
+                  << "s: DoTransmitPdcpSdu RNTI=" << m_rnti
+                  << " LCID=" << (int)m_lcid 
+                  << " size=" << p->GetSize()
+                  << " useMmWave=" << m_useMmWaveConnection
+                  << " targetCell=" << m_ueDataParams.targetCellId << std::endl;
+    }
 
     LtePdcpHeader pdcpHeader;
     pdcpHeader.SetSequenceNumber(m_txSequenceNumber);
