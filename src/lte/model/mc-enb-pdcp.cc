@@ -80,8 +80,7 @@ McEnbPdcp::McEnbPdcp()
       m_txSequenceNumber(0),
       m_rxSequenceNumber(0),
       m_useMmWaveConnection(false),
-      m_lastHandoverTime(0.0),
-      m_enableS1uOptimization(true)
+      m_lastHandoverTime(0.0)
 {
     NS_LOG_FUNCTION(this);
     m_pdcpSapProvider = new LtePdcpSpecificLtePdcpSapProvider<McEnbPdcp>(this);
@@ -99,11 +98,6 @@ McEnbPdcp::GetTypeId(void)
 {
     static TypeId tid = TypeId("ns3::McEnbPdcp")
                             .SetParent<Object>()
-                            .AddAttribute("EnableS1uOptimization",
-                                          "Enable S1-U path optimization after handover",
-                                          BooleanValue(true),
-                                          MakeBooleanAccessor(&McEnbPdcp::m_enableS1uOptimization),
-                                          MakeBooleanChecker())
                             .AddTraceSource("TxPDU",
                                             "PDU transmission notified to the RLC.",
                                             MakeTraceSourceAccessor(&McEnbPdcp::m_txPdu),
