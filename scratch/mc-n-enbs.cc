@@ -516,13 +516,30 @@ main(int argc, char* argv[])
     // parse again so you can override default values from the command line
     cmd.Parse(argc, argv);
 
-    // Get SGW/PGW and create a single RemoteHost
+    // Get SGW/PGW, MME, and create a single RemoteHost
     Ptr<Node> pgw = epcHelper->GetPgwNode();
+    Ptr<Node> mme = epcHelper->GetMmeNode();
     NodeContainer remoteHostContainer;
     remoteHostContainer.Create(1);
     Ptr<Node> remoteHost = remoteHostContainer.Get(0);
     InternetStackHelper internet;
     internet.Install(remoteHostContainer);
+
+    // Set positions for core network nodes (for NetAnim visualization)
+    MobilityHelper coreMobility;
+    coreMobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+    
+    // Install mobility on MME (control plane)
+    coreMobility.Install(mme);
+    mme->GetObject<MobilityModel>()->SetPosition(Vector(0, 100, 0));  // Control plane
+    
+    // Install mobility on PGW/SGW (data plane)
+    coreMobility.Install(pgw);
+    pgw->GetObject<MobilityModel>()->SetPosition(Vector(150, 200, 0));  // Data plane
+    
+    // Install mobility on Remote Host
+    coreMobility.Install(remoteHost);
+    remoteHost->GetObject<MobilityModel>()->SetPosition(Vector(400, 200, 0));  // Internet
 
     // Create the Internet by connecting remoteHost to pgw. Setup routing too
     PointToPointHelper p2ph;
@@ -556,7 +573,7 @@ main(int argc, char* argv[])
     NS_LOG_UNCOND("LTE eNB nodes: " << lteEnbNodes.GetN());
     NS_LOG_UNCOND("mmWave eNB nodes: " << mmWaveEnbNodes.GetN());
     NS_LOG_UNCOND("Total eNB nodes: " << allEnbNodes.GetN());
-#if 1
+
     // LTE anchor is colocated with first mmWave eNB for proper multi-connectivity
     
     // Position allocator for ALL eNBs (LTE + mmWave) - critical for proper topology
@@ -571,9 +588,19 @@ main(int argc, char* argv[])
     // First mmWave eNB is colocated with LTE anchor (like mc-twoenbs.cc)
     enbPositionAlloc->Add(firstEnbPos); // mmWave eNB #0 (colocated with LTE)
     NS_LOG_UNCOND("mmWave eNB #0 at position (" << firstEnbPos.x << ", " << firstEnbPos.y << ", " << firstEnbPos.z << ") - COLOCATED with LTE");
-    
+    Vector mmwPos; 
     for (uint32_t i = 1; i < mmWaveEnbNodes.GetN(); ++i) {
-        Vector mmwPos = Vector(i * enbSpacing, 0, 10);  // 10m height per 3GPP TR 38.901 UmiStreetCanyon spec
+#if 1
+        mmwPos = Vector(i * enbSpacing, 0, 10);  // 10m height per 3GPP TR 38.901 UmiStreetCanyon spec
+#else
+        if (i & 1 == 1) {
+            mmwPos = Vector(i * enbSpacing, 0, 10);  // 10m height per 3GPP TR 38.901 UmiStreetCanyon spec
+        }
+	else {
+            mmwPos = Vector(i * enbSpacing * -1, 0, 10);  // 10m height per 3GPP TR 38.901 UmiStreetCanyon spec
+	    ueStart = i * enbSpacing * -1;
+	}
+#endif
         enbPositionAlloc->Add(mmwPos);
         NS_LOG_UNCOND("mmWave eNB #" << i << " at position (" << mmwPos.x << ", " << mmwPos.y << ", " << mmwPos.z << ")");
     }
@@ -584,38 +611,15 @@ main(int argc, char* argv[])
     enbMobility.SetPositionAllocator(enbPositionAlloc);
     enbMobility.Install(allEnbNodes);
 
-#else
-    // Positions
-    Vector mmw1Position = Vector(50, 70, 3);
-    Vector mmw2Position = Vector(150, 70, 3);
-    Vector mmw3Position = Vector(250, 70, 3);
-
-    // Install Mobility Model
-    Ptr<ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator>();
-    // enbPositionAlloc->Add (Vector ((double)mmWaveDist/2 + streetWidth, mmw1Dist + 2*streetWidth,
-    // mmWaveZ));
-    enbPositionAlloc->Add(mmw1Position); 
-    enbPositionAlloc->Add(mmw1Position);
-    enbPositionAlloc->Add(mmw2Position);
-    enbPositionAlloc->Add(mmw3Position);
-    MobilityHelper enbmobility;
-    enbmobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    enbmobility.SetPositionAllocator(enbPositionAlloc);
-    enbmobility.Install(allEnbNodes);
-#endif
-
     MobilityHelper uemobility;
     Ptr<ListPositionAllocator> uePositionAlloc = CreateObject<ListPositionAllocator>();
-    // uePositionAlloc->Add (Vector (ueStart, -5, 0));
     uePositionAlloc->Add(Vector(ueStart, 0, 1.6));  // Put UE on highway centerline (Y=0)
     uemobility.SetMobilityModel("ns3::ConstantVelocityMobilityModel");
     uemobility.SetPositionAllocator(uePositionAlloc);
     uemobility.Install(ueNodes);
 
-    // ueNodes.Get (0)->GetObject<MobilityModel> ()->SetPosition (Vector (ueStart, -5,
-    // 0));
     ueNodes.Get(0)->GetObject<MobilityModel>()->SetPosition(Vector(ueStart, 0, 1.6));  // Put UE on highway centerline
-    ueNodes.Get(0)->GetObject<ConstantVelocityMobilityModel>()->SetVelocity(Vector(0, 0, 0));
+    ueNodes.Get(0)->GetObject<ConstantVelocityMobilityModel>()->SetVelocity(Vector(0, 0, 0)); //Heng: TBD
 
     // Install mmWave, lte, mc Devices to the nodes
     NetDeviceContainer lteEnbDevs = mmwaveHelper->InstallLteEnbDevice(lteEnbNodes);
@@ -758,7 +762,6 @@ for (uint32_t u = 0; u < mcUeDevs.GetN(); ++u) {
     anim.UpdateNodeColor(lteEnbNodes.Get(0), 0, 150, 255);  // Blue - LTE anchor
     anim.UpdateNodeSize(lteEnbNodes.Get(0), 8.0, 8.0);     // Larger for visibility
 
-#if 1
     for (uint32_t i = 0; i < mmWaveEnbNodes.GetN(); ++i) {
 	std::ostringstream oss;
         oss << "mmW" << (i);
@@ -766,22 +769,6 @@ for (uint32_t u = 0; u < mcUeDevs.GetN(); ++u) {
         anim.UpdateNodeColor(mmWaveEnbNodes.Get(i), 0, 255, 0);    // Green - Optimized target
         anim.UpdateNodeSize(mmWaveEnbNodes.Get(i), 7.0, 7.0);
     }
-#else
-    // mmWave eNB #1 (Source cell)
-    anim.UpdateNodeDescription(mmWaveEnbNodes.Get(0), "mmWave-eNB#1\n(Source)");
-    anim.UpdateNodeColor(mmWaveEnbNodes.Get(0), 255, 165, 0);  // Orange - Source
-    anim.UpdateNodeSize(mmWaveEnbNodes.Get(0), 7.0, 7.0);
-
-    // mmWave eNB #2 (Target cell - S1-U optimized)
-    anim.UpdateNodeDescription(mmWaveEnbNodes.Get(1), "mmWave-eNB#2\n(Target-Optimized)");
-    anim.UpdateNodeColor(mmWaveEnbNodes.Get(1), 0, 255, 0);    // Green - Optimized target
-    anim.UpdateNodeSize(mmWaveEnbNodes.Get(1), 7.0, 7.0);
-
-    // mmWave eNB #3 (Target cell - S1-U optimized)
-    anim.UpdateNodeDescription(mmWaveEnbNodes.Get(2), "mmWave-eNB#3\n(Target-Optimized)");
-    anim.UpdateNodeColor(mmWaveEnbNodes.Get(2), 0, 255, 0);    // Green - Optimized target
-    anim.UpdateNodeSize(mmWaveEnbNodes.Get(2), 7.0, 7.0);
-#endif
 
     // 📱 Configure UE visualization
     anim.UpdateNodeDescription(ueNodes.Get(0), "UE\n(Mobile User)");
@@ -789,8 +776,12 @@ for (uint32_t u = 0; u < mcUeDevs.GetN(); ++u) {
     anim.UpdateNodeSize(ueNodes.Get(0), 5.0, 5.0);
 
     // 🌐 Configure Core Network nodes
-    anim.UpdateNodeDescription(pgw, "PGW/SGW\n(S1-U Source)");
-    anim.UpdateNodeColor(pgw, 128, 0, 128);                   // Purple - Core network
+    anim.UpdateNodeDescription(mme, "MME\n(Control Plane)");
+    anim.UpdateNodeColor(mme, 255, 165, 0);                   // Orange - Control plane
+    anim.UpdateNodeSize(mme, 6.0, 6.0);
+    
+    anim.UpdateNodeDescription(pgw, "PGW/SGW\n(Data Plane)");
+    anim.UpdateNodeColor(pgw, 128, 0, 128);                   // Purple - Data plane
     anim.UpdateNodeSize(pgw, 6.0, 6.0);
 
     anim.UpdateNodeDescription(remoteHost, "Remote Host\n(Internet)");
